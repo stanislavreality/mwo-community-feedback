@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(node --check index.js)",
+      "Bash(node --check analyzer.js)",
+      "Bash(node --check discord.js)",
+      "Bash(node --check openai.js)",
+      "Bash(node --check sheets.js)",
+      "Bash(node --check report.js)",
+      "Bash(node _import.js)",
+      "Bash(del \"e:\\\\Reality Games\\\\Monopoly World\\\\MWO - Community Feedback\\\\_import.js\")",
+      "Bash(node -e \"const {generateHTML}=require\\('./report'\\); const d=require\\('./output/reports/data.json'\\); console.log\\('Migrating', d.runs?.[0]?.rows?.length ?? d.entries?.length, 'entries'\\); generateHTML\\([], new Date\\('2026-05-04T10:55:00Z'\\)\\);\")",
+      "Bash(node --check server.js)",
+      "Bash(node -e \"const {generateHTML}=require\\('./report'\\); generateHTML\\([], new Date\\(\\)\\);\")",
+      "Bash(npm uninstall *)",
+      "Bash(node -e \"const r = require\\('./report'\\); const fs = require\\('fs'\\), path = require\\('path'\\); const data = JSON.parse\\(fs.readFileSync\\('output/reports/data.json','utf8'\\)\\); const html = require\\('./report'\\); \")",
+      "Bash(node -e ' *)",
+      "Bash(Get-ChildItem -Force)",
+      "Bash(Select-Object Name, PSIsContainer)"
+    ]
+  }
+}

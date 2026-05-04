@@ -1,0 +1,28 @@
+{
+  "name": "discord-channel-analyzer",
+  "version": "1.0.0",
+  "description": "Analyzes Discord channels for player bugs and feedback. Classifies reports with GPT-4o vision and serves a live web dashboard.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "manual": "node index.js --manual"
+  },
+  "keywords": [
+    "discord",
+    "openai",
+    "bug-tracker",
+    "game-feedback",
+    "dashboard"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.17.3",
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1",
+    "express-basic-auth": "^1.2.1",
+    "node-cron": "^3.0.3",
+    "openai": "^4.52.7",
+    "pdfkit": "^0.18.0"
+  }
+}

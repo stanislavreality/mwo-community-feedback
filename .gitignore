@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Secrets — NEVER commit these
+.env
+service-account.json
+
+# Generated output (recreated on first run)
+output/
+fallback_*.json
+
+# Vision + seen-threads cache (rebuilt automatically)
+cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
