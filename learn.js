@@ -32,6 +32,9 @@ async function deriveRules(pending) {
     return `[${i + 1}] Issue: ${c.issueType}\nEntry: ${entryDesc}\nModerator note: "${c.reason}"`;
   }).join('\n\n');
 
+  const isReasoningModel = /^o\d/.test(model);
+  const tokenLimitParam = isReasoningModel ? 'max_completion_tokens' : 'max_tokens';
+
   const response = await openai.chat.completions.create({
     model,
     messages: [
@@ -56,7 +59,7 @@ async function deriveRules(pending) {
       },
     ],
     response_format: { type: 'json_object' },
-    max_tokens: 1000,
+    [tokenLimitParam]: 1000,
   });
 
   const raw = response.choices[0].message.content.trim();
