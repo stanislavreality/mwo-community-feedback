@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, ChannelType } = require('discord.js');
 
 let client = null;
 
@@ -37,6 +37,12 @@ async function fetchChannelMessages(channelId, channelName, since, token) {
   } catch (err) {
     console.warn(`[${ts()}] WARNING: Cannot access channel "${channelName}" (${channelId}): ${err.message}`);
     return [];
+  }
+
+  // Forum channels (ChannelType.GuildForum) are NOT text-based — they use threads as posts.
+  if (channel.type === ChannelType.GuildForum) {
+    console.log(`[${ts()}] Forum channel detected: #${channelName} — fetching threads since ${since.toISOString()}`);
+    return await fetchForumMessages(channel, channelName, since);
   }
 
   if (!channel || !channel.isTextBased || !channel.isTextBased()) {
@@ -81,6 +87,54 @@ async function fetchChannelMessages(channelId, channelName, since, token) {
   }
 
   console.log(`[${ts()}] Collected ${collected.length} meaningful messages from #${channelName}`);
+  return collected;
+}
+
+async function fetchForumMessages(channel, channelName, since) {
+  const sinceMs = since.getTime();
+  const collected = [];
+
+  // Active threads
+  const { threads: active } = await channel.threads.fetchActive();
+
+  // Archived threads created after `since`
+  let archivedBefore;
+  let archivedDone = false;
+  const archived = new Map();
+  while (!archivedDone) {
+    const result = await channel.threads.fetchArchived({ limit: 100, before: archivedBefore });
+    for (const [id, thread] of result.threads) {
+      if (thread.createdTimestamp < sinceMs) { archivedDone = true; break; }
+      archived.set(id, thread);
+    }
+    if (!result.hasMore) archivedDone = true;
+    if (result.threads.size > 0) {
+      const oldest = [...result.threads.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp)[0];
+      archivedBefore = oldest.id;
+    } else {
+      archivedDone = true;
+    }
+  }
+
+  const allThreads = new Map([...active, ...archived]);
+  let threadCount = 0;
+  for (const [, thread] of allThreads) {
+    if (thread.createdTimestamp < sinceMs) continue;
+    threadCount++;
+    try {
+      const msgs = await thread.messages.fetch({ limit: 100 });
+      for (const [, msg] of msgs) {
+        if (msg.createdTimestamp < sinceMs) continue;
+        if (msg.author.bot) continue;
+        if (!hasMeaningfulContent(msg)) continue;
+        collected.push(normalizeMessage(msg, channelName));
+      }
+    } catch (err) {
+      console.warn(`[${ts()}] Could not fetch messages from thread "${thread.name}": ${err.message}`);
+    }
+  }
+
+  console.log(`[${ts()}] Forum #${channelName}: ${threadCount} thread(s) in range → ${collected.length} message(s) collected`);
   return collected;
 }
 

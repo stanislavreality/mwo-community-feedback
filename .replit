@@ -1,10 +1,16 @@
 run = "node index.js"
 entrypoint = "index.js"
 modules = ["nodejs-20"]
+hidden = [".config", "node_modules", ".agent", ".claude", "package-lock.json"]
 
 [nix]
 channel = "stable-23_11"
 
 [deployment]
 run = ["sh", "-c", "node index.js"]
-deploymentTarget = "cloudrun"
+deploymentTarget = "vm"
+ignorePorts = false
+
+[[ports]]
+localPort = 3000
+externalPort = 80

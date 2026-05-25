@@ -2,7 +2,7 @@ const fs     = require('fs');
 const path   = require('path');
 const config = require('./config.json');
 const { fetchChannelMessages, destroyClient } = require('./discord');
-const { analyzeImage, classifyThread, withRetry } = require('./openai');
+const { analyzeImage, classifyThread, groupEntries, withRetry } = require('./openai');
 const { generateHTML, loadData, loadLastTimestamp } = require('./report');
 
 function ts() {
@@ -60,7 +60,7 @@ function classifyAttachment(att) {
 function groupIntoThreads(messages) {
   const threads = [];
   let current = null;
-  const GAP_MS = 30 * 60 * 1000;
+  const GAP_MS = 6 * 60 * 60 * 1000;
 
   for (const msg of messages) {
     if (current && current.authorId === msg.authorId) {
@@ -82,6 +82,15 @@ function groupIntoThreads(messages) {
   return threads;
 }
 
+function formatVisionNote(vision) {
+  // Legacy cache entries are plain strings; new entries are parsed JSON objects.
+  if (typeof vision === 'string') return `[Image] ${vision}`;
+  const screen      = vision.screenContext || 'unknown screen';
+  const issue       = vision.visibleIssue  || 'no visible issue';
+  const contradicts = vision.contradictsMessage ? 'true' : 'false';
+  return `[Image] Screen: ${screen} | Issue: ${issue} | Contradicts message: ${contradicts}`;
+}
+
 async function analyzeAttachments(messages, model) {
   const cache = loadImageCache();
   let dirty = false;
@@ -100,13 +109,13 @@ async function analyzeAttachments(messages, model) {
 
         if (cache[cacheKey]) {
           console.log(`[${ts()}] Vision cache hit: ${att.name}`);
-          notes.push(`[Image] ${cache[cacheKey]}`);
+          notes.push(formatVisionNote(cache[cacheKey]));
         } else {
           try {
-            const description = await withRetry(() => analyzeImage(att.url, model));
-            cache[cacheKey] = description;
+            const vision = await withRetry(() => analyzeImage(att.url, model, msg.content));
+            cache[cacheKey] = vision;
             dirty = true;
-            notes.push(`[Image] ${description}`);
+            notes.push(formatVisionNote(vision));
           } catch (err) {
             console.error(`[${ts()}] Vision error for ${att.url}: ${err.message}`);
             notes.push(`[Image — analysis failed: ${err.message}] URL: ${att.url}`);
@@ -179,6 +188,14 @@ async function analyze(days, incremental = false) {
   const threads = groupIntoThreads(allMessages);
   console.log(`[${ts()}] Grouped into ${threads.length} thread(s)`);
 
+  // Filter out threads from ignored users (e.g. team members)
+  const ignoredUsers = new Set((config.ignoredUsers || []).map(u => u.toLowerCase()));
+  const filteredThreads = ignoredUsers.size > 0
+    ? threads.filter(t => !ignoredUsers.has(t.authorUsername.toLowerCase()))
+    : threads;
+  if (filteredThreads.length < threads.length)
+    console.log(`[${ts()}] Skipped ${threads.length - filteredThreads.length} thread(s) from ignored users`);
+
   // 3. Pre-filter: skip threads already seen (DB entries + irrelevant cache)
   const existingUrls = new Set(
     loadData().entries.map(e => e.messageUrl).filter(Boolean)
@@ -187,13 +204,13 @@ async function analyze(days, incremental = false) {
   // Seed seen with DB entries so both caches stay in sync
   existingUrls.forEach(u => seen.add(u));
 
-  const newThreads = threads.filter(t => {
+  const newThreads = filteredThreads.filter(t => {
     const firstUrl = t.messages[0].url;
     if (seen.has(firstUrl)) return false;
     if (t.messages.some(m => existingUrls.has(m.url))) return false;
     return true;
   });
-  console.log(`[${ts()}] ${newThreads.length} new thread(s) to process (${threads.length - newThreads.length} already seen — skipped)`);
+  console.log(`[${ts()}] ${newThreads.length} new thread(s) to process (${filteredThreads.length - newThreads.length} already seen — skipped)`);
 
   if (newThreads.length === 0) {
     generateHTML([], runTime);
@@ -237,12 +254,19 @@ async function analyze(days, incremental = false) {
       .filter(Boolean)
       .join('\n');
 
+    const rawConfidence = (classification.confidence || '').toLowerCase();
+    const confidence = ['low', 'medium', 'high'].includes(rawConfidence) ? rawConfidence : 'medium';
+
+    const rawSentiment = (classification.sentiment || '').toLowerCase();
+    const sentiment = (rawSentiment === 'positive' || rawSentiment === 'negative') ? rawSentiment : 'negative';
+
     reportRows.push({
       date: firstMsg.timestamp.toISOString().replace('T', ' ').slice(0, 16),
       authorId: thread.authorId,
       authorUsername: thread.authorUsername,
       messageUrl: firstMsg.url,
       type: classification.type || 'FEEDBACK',
+      confidence,
       originalMessage: classification.originalMessage || threadText.slice(0, 1000),
       summary: classification.summary || '',
       description: classification.description || '',
@@ -250,13 +274,39 @@ async function analyze(days, incremental = false) {
       expectedBehavior: classification.expectedBehavior || '',
       actualBehavior: classification.actualBehavior || '',
       attachmentNotes: classification.attachmentNotes || combinedAttachmentNotes || '',
+      tags: [sentiment],
     });
   }
 
   saveSeenThreads(seen);
   console.log(`[${ts()}] Produced ${reportRows.length} classified row(s) from ${newThreads.length} new thread(s)`);
 
-  // 5. Generate HTML report
+  // 6. Group similar entries against existing groups
+  if (reportRows.length > 0) {
+    const existingEntries = loadData().entries;
+    const existingGroupKeys = [...new Map(
+      existingEntries
+        .filter(e => e.groupKey)
+        .map(e => [e.groupKey, { key: e.groupKey, label: e.groupLabel }])
+    ).values()];
+
+    console.log(`[${ts()}] Grouping ${reportRows.length} new row(s) (${existingGroupKeys.length} existing group(s))...`);
+    try {
+      const assignments = await withRetry(() => groupEntries(reportRows, existingGroupKeys, model));
+      for (const { index, groupKey, groupLabel } of assignments) {
+        if (index >= 0 && index < reportRows.length) {
+          reportRows[index].groupKey   = groupKey   || null;
+          reportRows[index].groupLabel = groupLabel || null;
+        }
+      }
+      const grouped = reportRows.filter(r => r.groupKey).length;
+      console.log(`[${ts()}] Grouping complete — ${grouped} row(s) assigned to a group`);
+    } catch (err) {
+      console.error(`[${ts()}] Grouping failed: ${err.message} — entries saved ungrouped`);
+    }
+  }
+
+  // 7. Generate HTML report
   try {
     generateHTML(reportRows, runTime);
   } catch (err) {

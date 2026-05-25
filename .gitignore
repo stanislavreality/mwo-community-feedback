@@ -16,3 +16,19 @@ cache/
 .DS_Store
 Thumbs.db
 *.log
+
+# AI tool local configs — never push these
+.agent/
+.claude/
+.codebuddy/
+.codex/
+.continue/
+.cursor/
+.gemini/
+.kiro/
+.opencode/
+.qoder/
+.roo/
+.trae/
+.windsurf/
+.github/prompts/

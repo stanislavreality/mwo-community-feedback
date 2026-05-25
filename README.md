@@ -126,14 +126,26 @@ Open `http://localhost:3000` (or your Replit URL):
 
 ## Deploying to Replit
 
-1. Create a **Node.js** Repl and upload / clone the project
-2. In **Secrets**, add `DISCORD_TOKEN` and `OPENAI_API_KEY`
-3. Run initial backfill once:
-   ```
-   node index.js --manual --days 30
-   ```
-4. Normal start is automatic via `.replit` → runs `node index.js`
-5. Enable **Always On** (Hacker plan+) so the 08:00 cron fires reliably
+This app needs a persistent filesystem (`output/reports/data.json` is the database) and an always-running process (in-process `node-cron` fires at 08:00). Use **Reserved VM Deployment**, not Autoscale / Cloud Run.
+
+1. **Import the project** — Create a new Repl from this Git repo (or upload the folder). `.replit` is already configured for `nodejs-20` + VM deployment.
+2. **Add Secrets** (Tools → Secrets) — minimum required:
+   - `DISCORD_TOKEN`
+   - `OPENAI_API_KEY`
+   - `DASHBOARD_PASS` (login password for the dashboard)
+   - `SESSION_SECRET` (any long random string)
+
+   Optional — only if you want the Jira button in the dashboard:
+   - `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `JIRA_PROJECT_KEY`
+   - `JIRA_FIELD_*` custom field IDs (run `node get-jira-fields.js` to list them)
+   - `DASHBOARD_URL` (the public URL of your Replit deployment)
+3. **Seed the data** — `output/` and `cache/` are gitignored, so the Repl starts empty. Either:
+   - Run a one-off backfill in the Shell: `node index.js --manual --days 30`, **or**
+   - Upload your existing `output/reports/data.json` and `cache/*.json` via the Files panel.
+4. **Deploy** — Click **Deploy → Reserved VM Deployment**. The `.replit` file already sets `deploymentTarget = "vm"` and maps `localPort 3000 → externalPort 80`, so the dashboard will be served at the deployment's public URL.
+5. **Verify** — Open the deployment URL, log in with `DASHBOARD_PASS`, and confirm the dashboard renders. The cron fires daily at 08:00 Europe/Warsaw (see `config.json`).
+
+**Why not Autoscale / Cloud Run?** Those targets have an ephemeral filesystem (the database vanishes on restart) and scale instances to zero (the cron never fires). Reserved VM keeps a single instance running with persistent disk — the only model this app works on.
 
 ---
 

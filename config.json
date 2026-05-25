@@ -2,12 +2,16 @@
   "channels": [
     { "id": "1280962282548887637", "name": "💬︱🇬🇧︱general" },
     { "id": "1282774191208403005", "name": "💬︱🇵🇱︱chat" },
-    { "id": "1474051041556431065", "name": "founders-chat" }
+    { "id": "1474051041556431065", "name": "founders-chat" },
+    { "id": "1295710248991981618", "name": "📝︱share-your-feedback" },
+    { "id": "1337734442478735464", "name": "🐞︱share-your-bug" }
   ],
   "schedule": {
     "cron": "0 8 * * *",
     "timezone": "Europe/Warsaw"
   },
   "lookbackDays": 1,
-  "openaiModel": "gpt-4o"
+  "openaiModel": "gpt-4.1",
+  "learnModel": "o4-mini",
+  "ignoredUsers": ["zjwoznowski", "stanrealitymeta"]
 }
