@@ -6,7 +6,13 @@ const fs      = require('fs');
 
 const { generateTLDR, withRetry } = require('./openai');
 const { generatePDF }             = require('./report');
+const db = require('./db');
 const config = require('./config.json');
+
+function persistData(raw) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(raw, null, 2), 'utf8');
+  db.saveToDb(raw).catch(err => console.warn('[db] save failed:', err.message));
+}
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -186,7 +192,7 @@ app.post('/api/tag', requireAdmin, (req, res) => {
       }
     }
 
-    fs.writeFileSync(DATA_FILE, JSON.stringify(raw, null, 2), 'utf8');
+    persistData(raw);
 
     const { generateHTML } = require('./report');
     generateHTML([], new Date());
@@ -220,7 +226,7 @@ app.post('/api/group', requireAdmin, (req, res) => {
       if (entry.groupKey === newGroupKey) entry.groupLabel = resolvedLabel;
     }
 
-    fs.writeFileSync(DATA_FILE, JSON.stringify(raw, null, 2), 'utf8');
+    persistData(raw);
     const { generateHTML } = require('./report');
     generateHTML([], new Date());
     res.json({ ok: true, groupKey: newGroupKey, label: resolvedLabel });
@@ -254,7 +260,7 @@ app.post('/api/ungroup', requireAdmin, (req, res) => {
       }
     }
 
-    fs.writeFileSync(DATA_FILE, JSON.stringify(raw, null, 2), 'utf8');
+    persistData(raw);
     const { generateHTML } = require('./report');
     generateHTML([], new Date());
     res.json({ ok: true });
@@ -447,7 +453,7 @@ app.post('/api/jira/push', requireAdmin, async (req, res) => {
     }
 
     if (created.length > 0) {
-      fs.writeFileSync(DATA_FILE, JSON.stringify(raw, null, 2), 'utf8');
+      persistData(raw);
       const { generateHTML } = require('./report');
       generateHTML([], new Date());
     }
@@ -459,12 +465,37 @@ app.post('/api/jira/push', requireAdmin, async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[${new Date().toISOString()}] Web UI → http://0.0.0.0:${PORT}`);
-  try {
-    const { generateHTML } = require('./report');
-    generateHTML([], new Date());
-  } catch (err) {
-    console.warn('[REBUILD] Could not regenerate HTML on startup:', err.message);
+async function restoreFromDbOnStartup() {
+  if (!db.isEnabled()) {
+    console.log('[db] Replit DB not configured — using local file only.');
+    return;
   }
+  try {
+    const dbData = await db.loadFromDb();
+    if (dbData && Array.isArray(dbData.entries)) {
+      fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+      fs.writeFileSync(DATA_FILE, JSON.stringify(dbData, null, 2), 'utf8');
+      console.log(`[db] Restored ${dbData.entries.length} entries from Replit DB → ${DATA_FILE}`);
+    } else if (fs.existsSync(DATA_FILE)) {
+      const local = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+      await db.saveToDb(local);
+      console.log(`[db] Seeded Replit DB from existing ${DATA_FILE} (${(local.entries || []).length} entries).`);
+    } else {
+      console.log('[db] No data in Replit DB and no local file — starting empty.');
+    }
+  } catch (err) {
+    console.warn('[db] Startup restore failed:', err.message);
+  }
+}
+
+restoreFromDbOnStartup().then(() => {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[${new Date().toISOString()}] Web UI → http://0.0.0.0:${PORT}`);
+    try {
+      const { generateHTML } = require('./report');
+      generateHTML([], new Date());
+    } catch (err) {
+      console.warn('[REBUILD] Could not regenerate HTML on startup:', err.message);
+    }
+  });
 });

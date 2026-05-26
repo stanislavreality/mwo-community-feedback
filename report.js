@@ -1,6 +1,7 @@
 const fs   = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
+const db = require('./db');
 
 const OUTPUT_DIR  = path.resolve('output');
 const REPORTS_DIR = path.join(OUTPUT_DIR, 'reports');
@@ -1219,6 +1220,7 @@ function generateHTML(rows, runTime) {
 
   data.lastTimestamp = runTime.toISOString();
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+  db.saveToDb(data).catch(err => console.warn('[db] save failed:', err.message));
 
   fs.writeFileSync(INDEX_FILE, buildHTML(data.entries), 'utf8');
   console.log(`[${ts()}] +${added} new entries (total: ${data.entries.length}) → ${INDEX_FILE}`);
